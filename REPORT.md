@@ -16,7 +16,7 @@ Sau 14 lần thử nghiệm (experiments) với RandomForestClassifier, mô hìn
 - **Accuracy**: 0.686
 - **F1-score**: 0.684
 
-**Ngưỡng deploy**: 0.68 (điều chỉnh từ 0.70 dựa trên độ chính xác thực tế của Random Forest)
+**Ngưỡng deploy**: 0.70 (Random Forest đạt accuracy 0.750 trên tập eval)
 
 ### Các tham số đã thử nghiệm (top 6):
 | Run | Accuracy | n_estimators | max_depth | criterion | min_samples_split |
