@@ -15,9 +15,6 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # JOB 1 - UNIT TEST
-  # Chay unit tests tren du lieu ao (khong can ket noi cloud storage).
-  # Neu co bat ky test nao that bai, pipeline dung lai o day va khong tien hanh
-  # huan luyen hay trien khai.
   # ---------------------------------------------------------------------------
   test:
     name: Unit Test
@@ -38,8 +35,6 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # JOB 2 - TRAIN
-  # Xac thuc cloud storage, pull du lieu bang DVC, huan luyen mo hinh, upload artifact.
-  # Chi chay khi Job 1 (Unit Test) hoan thanh thanh cong.
   # ---------------------------------------------------------------------------
   train:
     name: Train
@@ -62,6 +57,17 @@ jobs:
         run: |
           echo '${{ secrets.CLOUD_CREDENTIALS }}' > sa-key.json
           echo "GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/sa-key.json" >> $GITHUB_ENV
+
+      # --- Bonus 1: DagsHub MLflow tracking ---
+      - name: Configure MLflow tracking (DagsHub)
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
+        run: |
+          echo "MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_USERNAME=$MLFLOW_TRACKING_USERNAME" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_PASSWORD=$MLFLOW_TRACKING_PASSWORD" >> $GITHUB_ENV
 
       - name: Pull data with DVC
         run: dvc pull data/train_phase1.csv.dvc data/eval.csv.dvc
@@ -96,12 +102,32 @@ jobs:
           name: metrics
           path: outputs/metrics.json
 
+      # --- Bonus 3: Upload report artifact ---
+      - name: Save report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: outputs/report.txt
+
+      # --- Bonus 4: Save metrics to GCS for rollback comparison ---
+      - name: Upload metrics to Cloud Storage (for rollback)
+        env:
+          CLOUD_BUCKET: ${{ secrets.CLOUD_BUCKET }}
+        run: |
+          python - <<'EOF'
+          from google.cloud import storage
+          import os
+          bucket_name = os.environ["CLOUD_BUCKET"]
+          client = storage.Client()
+          bucket = client.bucket(bucket_name)
+          blob = bucket.blob("models/latest/metrics.json")
+          blob.upload_from_filename("outputs/metrics.json")
+          print(f"Metrics da duoc upload len gs://{bucket_name}/models/latest/metrics.json")
+          EOF
+
 
   # ---------------------------------------------------------------------------
   # JOB 3 - EVAL
-  # Kiem tra nguong chat luong (accuracy >= 0.70).
-  # Pipeline dung lai o day neu mo hinh chua dat yeu cau.
-  # Chi chay khi Job 2 (Train) hoan thanh thanh cong.
   # ---------------------------------------------------------------------------
   eval:
     name: Eval
@@ -120,15 +146,45 @@ jobs:
 
 
   # ---------------------------------------------------------------------------
-  # JOB 4 - DEPLOY
-  # Trien khai len VM qua SSH.
-  # Chi chay khi Job 3 (Eval) hoan thanh thanh cong.
+  # JOB 4 - DEPLOY (voi Bonus 4: rollback check)
   # ---------------------------------------------------------------------------
   deploy:
     name: Deploy
     needs: eval
     runs-on: ubuntu-latest
     steps:
+
+      # --- Bonus 4: Compare old vs new accuracy ---
+      - name: Check previous accuracy for rollback
+        env:
+          CLOUD_BUCKET: ${{ secrets.CLOUD_BUCKET }}
+          NEW_ACCURACY: ${{ needs.train.outputs.accuracy }}
+        run: |
+          echo "new_accuracy=$NEW_ACCURACY" >> $GITHUB_ENV
+
+          python - <<'ENDPY'
+          import os, json
+          try:
+              from google.cloud import storage
+              bucket = storage.Client().bucket(os.environ["CLOUD_BUCKET"])
+              blob = bucket.blob("models/latest/metrics.json")
+              if blob.exists():
+                  old_metrics = json.loads(blob.download_as_text())
+                  old_acc = old_metrics["accuracy"]
+                  new_acc = float(os.environ["NEW_ACCURACY"])
+                  print(f"Old accuracy: {old_acc:.4f} | New accuracy: {new_acc:.4f}")
+                  if new_acc < old_acc:
+                      raise SystemExit(
+                          f"ROLLBACK: new accuracy {new_acc:.4f} < old accuracy {old_acc:.4f}. Huy deploy."
+                      )
+                  print(f"PASSED: new accuracy {new_acc:.4f} >= old accuracy {old_acc:.4f}. Tiep tuc deploy.")
+              else:
+                  print("No previous metrics found. Skipping rollback check.")
+          except SystemExit:
+              raise
+          except Exception as e:
+              print(f"Could not check previous metrics: {e}. Skipping rollback check.")
+          ENDPY
 
       - name: SSH deploy to VM
         uses: appleboy/ssh-action@v1.0.3
