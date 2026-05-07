@@ -7,6 +7,8 @@ on:
       - 'data/**.dvc'
       - 'src/**.py'
       - 'params.yaml'
+      - '.dvc/config'
+      - '.github/workflows/**.yml'
   workflow_dispatch:
 
 jobs:
