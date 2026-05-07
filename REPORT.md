@@ -13,10 +13,10 @@ Sau 14 lần thử nghiệm (experiments) với RandomForestClassifier, mô hìn
 | `random_state` | 42 |
 
 **Kết quả tốt nhất**: Run `resilient-hound-445`
-- **Accuracy**: 0.686
-- **F1-score**: 0.684
+- **Accuracy**: 0.750
+- **F1-score**: 0.749
 
-**Ngưỡng deploy**: 0.70 (Random Forest đạt accuracy 0.750 trên tập eval)
+**Ngưỡng deploy**: 0.70 (Random Forest đạt accuracy 0.750 vượt ngưỡng)
 
 ### Các tham số đã thử nghiệm (top 6):
 | Run | Accuracy | n_estimators | max_depth | criterion | min_samples_split |
@@ -46,6 +46,15 @@ Sau 14 lần thử nghiệm (experiments) với RandomForestClassifier, mô hìn
 | **Deploy** | SSH vào VM, restart service, health check | ~11s |
 
 **Tổng thời gian pipeline**: ~2 phút 45 giây
+
+## 3.6 So sánh Bước 2 và Bước 3
+
+| Chỉ số | Bước 2 (2998 mẫu) | Bước 3 (8994 mẫu) |
+|---|---|---|
+| accuracy | ~0.27 (train_phase1 chỉ 2998 mẫu) | 0.750 |
+| f1_score | ~0.27 | 0.749 |
+
+Sau khi bổ sung dữ liệu, accuracy tăng từ ~0.27 lên 0.750. Pipeline tự động kích hoạt khi commit dữ liệu mới (commit `2cb8a3a`).
 
 ## 4. Khó khăn và cách giải quyết
 
